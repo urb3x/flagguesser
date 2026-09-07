@@ -5,6 +5,7 @@ class MultiplayerManager {
     this.conn = null;
     this.roomCode = null;
     this.isHost = false;
+    this.connectTimeout = null;
     this.callbacks = {
       onRoomCreated: null,
       onOpponentJoined: null,
@@ -24,19 +25,20 @@ class MultiplayerManager {
     this.callbacks = { onRoomCreated: onCreated, onOpponentJoined: onJoined, onData, onError, onDisconnect };
     this.roomCode = this.generate4DigitCode();
 
-    const peerId = `flagguesser-${this.roomCode}`;
+    const peerId = `fg1v1-${this.roomCode}`;
     try {
       this.peer = new Peer(peerId, {
         debug: 1,
         config: {
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" }
+            { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "stun:stun2.l.google.com:19302" }
           ]
         }
       });
 
-      this.peer.on("open", (id) => {
+      this.peer.on("open", () => {
         if (this.callbacks.onRoomCreated) {
           this.callbacks.onRoomCreated(this.roomCode);
         }
@@ -45,15 +47,11 @@ class MultiplayerManager {
       this.peer.on("connection", (conn) => {
         this.conn = conn;
         this.setupConnectionHandlers();
-        if (this.callbacks.onOpponentJoined) {
-          this.callbacks.onOpponentJoined();
-        }
       });
 
       this.peer.on("error", (err) => {
         console.warn("PeerJS Host Error:", err);
         if (err.type === "unavailable-id") {
-          // Retry with new 4-digit code if collided
           this.createRoom(onCreated, onJoined, onData, onError, onDisconnect);
         } else if (this.callbacks.onError) {
           this.callbacks.onError(err.message || "Connection error");
@@ -76,24 +74,38 @@ class MultiplayerManager {
         config: {
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" }
+            { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "stun:stun2.l.google.com:19302" }
           ]
         }
       });
 
       this.peer.on("open", () => {
-        const targetId = `flagguesser-${this.roomCode}`;
+        const targetId = `fg1v1-${this.roomCode}`;
         this.conn = this.peer.connect(targetId, { reliable: true });
         this.setupConnectionHandlers();
+
+        // 9-second timeout if room doesn't respond
+        clearTimeout(this.connectTimeout);
+        this.connectTimeout = setTimeout(() => {
+          if (!this.conn || !this.conn.open) {
+            if (this.callbacks.onError) {
+              this.callbacks.onError("Room not found or opponent did not respond. Check the 4-digit code.");
+            }
+            this.close();
+          }
+        }, 9000);
       });
 
       this.peer.on("error", (err) => {
         console.warn("PeerJS Client Error:", err);
+        clearTimeout(this.connectTimeout);
         if (this.callbacks.onError) {
-          this.callbacks.onError("Could not find room with code " + this.roomCode);
+          this.callbacks.onError("Could not connect to room " + this.roomCode);
         }
       });
     } catch (e) {
+      clearTimeout(this.connectTimeout);
       if (this.callbacks.onError) this.callbacks.onError(e.message);
     }
   }
@@ -102,12 +114,28 @@ class MultiplayerManager {
     if (!this.conn) return;
 
     this.conn.on("open", () => {
-      if (!this.isHost && this.callbacks.onOpponentJoined) {
-        this.callbacks.onOpponentJoined();
+      clearTimeout(this.connectTimeout);
+      console.log("DataChannel connected:", this.isHost ? "Host" : "Client");
+
+      if (this.isHost) {
+        if (this.callbacks.onOpponentJoined) {
+          this.callbacks.onOpponentJoined();
+        }
+      } else {
+        // Client notifies host it is ready
+        this.send({ type: "CLIENT_READY" });
+        if (this.callbacks.onOpponentJoined) {
+          this.callbacks.onOpponentJoined();
+        }
       }
     });
 
     this.conn.on("data", (data) => {
+      if (this.isHost && data && data.type === "CLIENT_READY") {
+        if (this.callbacks.onOpponentJoined) {
+          this.callbacks.onOpponentJoined();
+        }
+      }
       if (this.callbacks.onData) {
         this.callbacks.onData(data);
       }
@@ -120,19 +148,33 @@ class MultiplayerManager {
     });
 
     this.conn.on("error", (err) => {
+      console.warn("Connection error:", err);
+      clearTimeout(this.connectTimeout);
       if (this.callbacks.onError) {
-        this.callbacks.onError("Peer connection error");
+        this.callbacks.onError("Connection error with opponent.");
       }
     });
   }
 
   send(payload) {
     if (this.conn && this.conn.open) {
-      this.conn.send(payload);
+      try {
+        this.conn.send(payload);
+      } catch (e) {
+        console.warn("Send error:", e);
+      }
+    } else if (this.conn) {
+      // Queue until open
+      this.conn.once("open", () => {
+        try {
+          this.conn.send(payload);
+        } catch (e) {}
+      });
     }
   }
 
   close() {
+    clearTimeout(this.connectTimeout);
     if (this.conn) {
       try { this.conn.close(); } catch (e) {}
       this.conn = null;

@@ -556,6 +556,8 @@
       },
       // onOpponentJoined
       () => {
+        if (state.pvp.matchStarted) return;
+        state.pvp.matchStarted = true;
         soundManager.playStreak();
         const seq = generateFlagSequence(10);
         state.pvp.isOnline = true;
@@ -566,11 +568,14 @@
         state.pvp.scoreP1 = 0;
         state.pvp.scoreP2 = 0;
 
-        mpManager.send({
+        const startMsg = {
           type: "START_MATCH",
           flagSequence: seq,
           totalRounds: seq.length
-        });
+        };
+
+        mpManager.send(startMsg);
+        setTimeout(() => mpManager.send(startMsg), 300);
 
         startPvpMatch();
       },
@@ -598,13 +603,14 @@
     soundManager.playClick();
     dom.joinErrorMsg.style.display = "none";
     dom.joinRoomBtn.disabled = true;
-    dom.joinRoomBtn.textContent = "Connecting...";
+    dom.joinRoomBtn.textContent = "Connecting to room " + code + "...";
 
+    state.pvp.matchStarted = false;
     mpManager.joinRoom(
       code,
       // onConnected
       () => {
-        soundManager.playStreak();
+        dom.joinRoomBtn.textContent = "Connected! Starting game...";
         state.pvp.isOnline = true;
         state.pvp.isHost = false;
         state.pvp.myPlayerNumber = 2;
@@ -626,13 +632,17 @@
 
   function handleNetworkData(data) {
     if (data.type === "START_MATCH") {
+      soundManager.playStreak();
       state.pvp.isOnline = true;
+      state.pvp.matchStarted = true;
       state.pvp.flagSequence = data.flagSequence;
       state.pvp.totalRounds = data.totalRounds;
       state.pvp.currentTurnIndex = 0;
       state.pvp.activePlayer = 1;
       state.pvp.scoreP1 = 0;
       state.pvp.scoreP2 = 0;
+      dom.joinRoomBtn.disabled = false;
+      dom.joinRoomBtn.textContent = "Join Match ➔";
       startPvpMatch();
     } else if (data.type === "GUESS_RESULT") {
       state.pvp.scoreP1 = data.scoreP1;
