@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flag Guesser — Test Your World Geography Knowledge</title>
+  <meta name="description" content="Play the ultimate flag guessing game! Test your flag knowledge across continents, time attack, reverse mode, and study in the flag encyclopedia.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚩</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header>
+      <div class="brand" id="brand-home">
+        <span class="brand-icon">🚩</span>
+        <span class="brand-title">FLAG GUESSER</span>
+      </div>
+      <div class="nav-actions">
+        <button class="icon-btn" id="sound-btn" title="Toggle Sound (M)">🔊</button>
+        <button class="icon-btn" id="stats-btn" title="View Statistics">📊</button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs: Play vs Encyclopedia -->
+    <div class="view-tabs">
+      <button class="view-tab active" id="tab-play" data-view="play">🎮 Play Game</button>
+      <button class="view-tab" id="tab-study" data-view="study">📖 Flag Encyclopedia</button>
+    </div>
+
+    <!-- PLAY VIEW -->
+    <div id="play-view" style="display: flex; flex-direction: column; gap: 16px;">
+      <!-- Game Mode Selection -->
+      <div class="mode-bar">
+        <button class="mode-chip active" data-mode="choice">🎯 Multiple Choice</button>
+        <button class="mode-chip" data-mode="reverse">🔄 Pick the Flag</button>
+        <button class="mode-chip" data-mode="type">⌨️ Type & Guess</button>
+        <button class="mode-chip" data-mode="timeattack">⚡ Time Attack (60s)</button>
+      </div>
+
+      <!-- Filters: Continent & Difficulty -->
+      <div class="filter-bar">
+        <select id="continent-filter" class="select-control" aria-label="Select Continent">
+          <option value="all">🌍 All Continents</option>
+          <option value="Europe">🇪🇺 Europe</option>
+          <option value="Asia">🌏 Asia</option>
+          <option value="Americas">🌎 Americas</option>
+          <option value="Africa">🌍 Africa</option>
+          <option value="Oceania">🏝️ Oceania</option>
+        </select>
+        <select id="difficulty-filter" class="select-control" aria-label="Select Difficulty">
+          <option value="all">⭐ All Difficulties</option>
+          <option value="easy">🟢 Easy (Famous)</option>
+          <option value="medium">🟡 Medium</option>
+          <option value="hard">🔴 Hard (Challenging)</option>
+        </select>
+      </div>
+
+      <!-- Heads-Up Display (Score, Streak, Timer, Lives) -->
+      <div class="hud-bar">
+        <div class="hud-item">
+          <span class="hud-label">Score</span>
+          <span class="hud-value" id="hud-score">0</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">Streak</span>
+          <span class="hud-value hud-streak" id="hud-streak">🔥 0</span>
+        </div>
+        <div class="hud-item" id="hud-lives-container">
+          <span class="hud-label">Lives</span>
+          <span class="hud-lives" id="hud-lives">❤️❤️❤️</span>
+        </div>
+        <div class="hud-item" id="hud-timer-container" style="display: none;">
+          <span class="hud-label">Time Left</span>
+          <span class="hud-value hud-timer" id="hud-timer">60s</span>
+        </div>
+      </div>
+
+      <!-- Time Attack Bar -->
+      <div class="time-bar-container" id="time-bar-container" style="display: none;">
+        <div class="time-bar" id="time-bar"></div>
+      </div>
+
+      <!-- Main Game Arena -->
+      <main class="game-card" id="game-card">
+        <!-- Question prompt for Reverse Mode (Hidden in Flag-first modes) -->
+        <div id="reverse-prompt-box" style="display: none; text-align: center;">
+          <div class="question-prompt">Which flag belongs to <span class="highlight" id="reverse-country-name">Country</span>?</div>
+          <div class="sub-hint-text" id="reverse-sub-hint">Capital: Paris • Europe</div>
+        </div>
+
+        <!-- Flag Stage (For Choice, Type, and Time Attack) -->
+        <div class="flag-stage" id="flag-stage">
+          <div class="flag-image-wrap">
+            <img id="current-flag-img" class="flag-img" alt="Country Flag" src="">
+          </div>
+        </div>
+
+        <!-- Choice Mode Options Grid -->
+        <div class="options-grid" id="choice-options-grid">
+          <!-- Filled dynamically by JavaScript -->
+        </div>
+
+        <!-- Reverse Mode Flags Grid -->
+        <div class="flag-cards-grid" id="reverse-cards-grid" style="display: none;">
+          <!-- Filled dynamically by JavaScript -->
+        </div>
+
+        <!-- Type Mode Input Section -->
+        <div class="type-section" id="type-section" style="display: none;">
+          <div class="input-row">
+            <input type="text" id="type-input" class="guess-input" placeholder="Type country name..." autocomplete="off" autocorrect="off" spellcheck="false">
+            <button class="submit-guess-btn" id="type-submit-btn">Guess</button>
+          </div>
+          <div class="autocomplete-list" id="autocomplete-list" style="display: none;"></div>
+        </div>
+
+        <!-- Hints Row -->
+        <div class="hints-row" id="hints-row">
+          <button class="hint-btn" id="hint-5050" title="Remove 2 wrong options">
+            <span>✂️ 50 / 50</span>
+          </button>
+          <button class="hint-btn" id="hint-capital" title="Show capital city">
+            <span>🏛️ Capital Hint</span>
+          </button>
+          <button class="hint-btn" id="hint-letter" title="Show first letter">
+            <span>🔤 First Letter</span>
+          </button>
+          <button class="hint-btn" id="skip-btn" title="Skip to next flag (-1 life in streak)">
+            <span>⏭️ Skip</span>
+          </button>
+        </div>
+
+        <!-- Hint message reveal -->
+        <div class="hint-message-box" id="hint-message-box" style="display: none;"></div>
+      </main>
+    </div>
+
+    <!-- ENCYCLOPEDIA / STUDY VIEW -->
+    <div id="study-view" style="display: none;" class="study-container">
+      <div class="search-input-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="study-search-input" class="study-search" placeholder="Search countries, capitals, or continents...">
+      </div>
+
+      <div class="encyclopedia-grid" id="encyclopedia-grid">
+        <!-- Filled dynamically by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS MODAL -->
+  <div class="modal-backdrop" id="stats-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">🏆 Your Geography Stats</h2>
+        <button class="close-modal-btn" id="close-stats-btn">&times;</button>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <span class="number" id="stat-games-played">0</span>
+          <span class="title">Rounds Played</span>
+        </div>
+        <div class="stat-box">
+          <span class="number" id="stat-high-score">0</span>
+          <span class="title">Best Score</span>
+        </div>
+        <div class="stat-box">
+          <span class="number" id="stat-best-streak">0</span>
+          <span class="title">Best Streak</span>
+        </div>
+        <div class="stat-box">
+          <span class="number" id="stat-accuracy">0%</span>
+          <span class="title">Accuracy</span>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="reset-stats-btn">Reset Stats</button>
+        <button class="btn-primary" id="share-stats-btn">📋 Share Score</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GAME OVER / ROUND COMPLETE MODAL -->
+  <div class="modal-backdrop" id="gameover-modal">
+    <div class="modal-card" style="text-align: center;">
+      <div class="modal-header" style="justify-content: center;">
+        <h2 class="modal-title" id="gameover-title">Game Over!</h2>
+      </div>
+      <p id="gameover-desc" style="color: var(--text-muted); margin-top: -10px;">Great attempt! Here is how you did:</p>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <span class="number" id="gameover-final-score">0</span>
+          <span class="title">Final Score</span>
+        </div>
+        <div class="stat-box">
+          <span class="number" id="gameover-round-streak">0</span>
+          <span class="title">Max Streak</span>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="play-again-btn">Play Again 🚀</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/countries.js"></script>
+  <script src="js/sound.js"></script>
+  <script src="js/confetti.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
