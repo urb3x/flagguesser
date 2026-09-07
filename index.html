@@ -25,12 +25,6 @@
       </div>
     </header>
 
-    <!-- Navigation Tabs: Play vs Encyclopedia -->
-    <div class="view-tabs">
-      <button class="view-tab active" id="tab-play" data-view="play">🎮 Play Game</button>
-      <button class="view-tab" id="tab-study" data-view="study">📖 Flag Encyclopedia</button>
-    </div>
-
     <!-- PLAY VIEW -->
     <div id="play-view" style="display: flex; flex-direction: column; gap: 16px;">
       <!-- Mode Selection: Solo vs PvP Duel -->
@@ -173,22 +167,8 @@
               <span>Guess</span> <span>➔</span>
             </button>
           </div>
-          <!-- Real-time autocomplete suggestions -->
-          <div class="autocomplete-list" id="autocomplete-list" style="display: none;"></div>
         </div>
       </main>
-    </div>
-
-    <!-- ENCYCLOPEDIA / STUDY VIEW -->
-    <div id="study-view" style="display: none;" class="study-container">
-      <div class="search-input-wrap">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="study-search-input" class="study-search" placeholder="Search countries, capitals, or continents...">
-      </div>
-
-      <div class="encyclopedia-grid" id="encyclopedia-grid">
-        <!-- Filled dynamically by JavaScript -->
-      </div>
     </div>
   </div>
 

@@ -1,6 +1,6 @@
-// Flag Guesser — Typing-First with Autocorrect & 1v1 PvP Duel via 4-Digit Code
+// Flag Guesser — Typo-Tolerant Typing & 1v1 PvP Duel via 4-Digit Code
 (function () {
-  // Levenshtein Distance for Fuzzy Autocorrect
+  // Levenshtein distance to detect and forgive typos
   function levenshtein(a, b) {
     const an = a ? a.length : 0;
     const bn = b ? b.length : 0;
@@ -29,55 +29,63 @@
     return str ? str.toLowerCase().trim().replace(/[^a-z0-9]/g, "") : "";
   }
 
-  function findBestCountryMatch(rawInput) {
+  // Check if query matches a country (exact or minor typo)
+  function matchesCountry(query, country) {
+    if (!query || query.length < 2) return false;
+    const candidates = [country.name, ...(country.aliases || [])];
+
+    for (const cand of candidates) {
+      const cleanCand = cleanString(cand);
+      if (cleanCand === query) return true;
+
+      // Distance allowance for typos
+      if (query.length >= 3) {
+        const dist = levenshtein(query, cleanCand);
+        const maxDist = cleanCand.length <= 4 ? 1 : cleanCand.length <= 7 ? 2 : 3;
+        if (dist <= maxDist) return true;
+      }
+    }
+    return false;
+  }
+
+  // Find if query matches ANY known country in the world
+  function findAnyCountryMatch(rawInput) {
     const query = cleanString(rawInput);
     if (!query) return null;
 
-    // 1. Exact match on name or aliases
+    // 1. Check exact match
     for (const c of COUNTRIES_DATA) {
-      if (cleanString(c.name) === query) {
-        return { country: c, isExact: true, autocorrected: false };
-      }
-      if (c.aliases) {
-        for (const a of c.aliases) {
-          if (cleanString(a) === query) {
-            return { country: c, isExact: true, autocorrected: false };
+      if (cleanString(c.name) === query) return c;
+      if (c.aliases && c.aliases.some(a => cleanString(a) === query)) return c;
+    }
+
+    // 2. Check typo match
+    if (query.length >= 3) {
+      let bestCountry = null;
+      let minDistance = Infinity;
+
+      for (const c of COUNTRIES_DATA) {
+        const candidates = [c.name, ...(c.aliases || [])];
+        for (const cand of candidates) {
+          const cleanCand = cleanString(cand);
+          const dist = levenshtein(query, cleanCand);
+          const maxDist = cleanCand.length <= 4 ? 1 : cleanCand.length <= 7 ? 2 : 3;
+
+          if (dist <= maxDist && dist < minDistance) {
+            minDistance = dist;
+            bestCountry = c;
           }
         }
       }
+      return bestCountry;
     }
 
-    // 2. Fuzzy Levenshtein match
-    let bestMatch = null;
-    let minDistance = Infinity;
-
-    for (const c of COUNTRIES_DATA) {
-      const candidates = [c.name, ...(c.aliases || [])];
-      for (const cand of candidates) {
-        const cleanCand = cleanString(cand);
-        const dist = levenshtein(query, cleanCand);
-        const maxAllowedDist = cleanCand.length <= 4 ? 1 : cleanCand.length <= 7 ? 2 : 3;
-
-        if (dist <= maxAllowedDist && dist < minDistance) {
-          minDistance = dist;
-          bestMatch = {
-            country: c,
-            isExact: false,
-            autocorrected: true,
-            originalInput: rawInput.trim(),
-            distance: dist
-          };
-        }
-      }
-    }
-
-    return bestMatch;
+    return null;
   }
 
   // Application State
   const state = {
-    view: "play",      // "play" or "study"
-    gameMode: "solo",  // "solo", "pvp-online", "pvp-local"
+    gameMode: "solo",  // "solo", "pvp-lobby", "pvp-online", "pvp-local"
     currentCountry: null,
     usedCountryCodes: new Set(),
     selectedContinent: "all",
@@ -98,13 +106,13 @@
       isOnline: false,
       isHost: false,
       roomCode: null,
-      flagSequence: [], // Array of country codes for the match
+      flagSequence: [],
       currentTurnIndex: 0,
       totalRounds: 10,
       activePlayer: 1, // 1 or 2
       scoreP1: 0,
       scoreP2: 0,
-      myPlayerNumber: 1 // 1 for host / P1, 2 for guest / P2
+      myPlayerNumber: 1
     },
 
     // Overall Stats
@@ -121,12 +129,7 @@
 
   function cacheDOMElements() {
     dom = {
-      playTab: document.getElementById("tab-play"),
-      studyTab: document.getElementById("tab-study"),
-      playView: document.getElementById("play-view"),
-      studyView: document.getElementById("study-view"),
       brandHome: document.getElementById("brand-home"),
-
       soundBtn: document.getElementById("sound-btn"),
       statsBtn: document.getElementById("stats-btn"),
       closeStatsBtn: document.getElementById("close-stats-btn"),
@@ -176,7 +179,6 @@
       feedbackBanner: document.getElementById("feedback-banner"),
       typeInput: document.getElementById("type-input"),
       typeSubmitBtn: document.getElementById("type-submit-btn"),
-      autocompleteList: document.getElementById("autocomplete-list"),
 
       // Modals
       soloGameoverModal: document.getElementById("solo-gameover-modal"),
@@ -192,11 +194,7 @@
       pvpLabelP1: document.getElementById("pvp-label-p1"),
       pvpLabelP2: document.getElementById("pvp-label-p2"),
       pvpRematchBtn: document.getElementById("pvp-rematch-btn"),
-      pvpLeaveBtn: document.getElementById("pvp-leave-btn"),
-
-      // Study
-      studySearchInput: document.getElementById("study-search-input"),
-      encyclopediaGrid: document.getElementById("encyclopedia-grid")
+      pvpLeaveBtn: document.getElementById("pvp-leave-btn")
     };
   }
 
@@ -239,7 +237,7 @@
     }
   }
 
-  // --- SOLO POOL & FLAG PICKING ---
+  // --- POOL & FLAG PICKING ---
   function getFilteredPool() {
     let pool = COUNTRIES_DATA;
     if (state.selectedContinent !== "all") {
@@ -253,11 +251,9 @@
     state.isAnsweringLocked = false;
     dom.typeInput.value = "";
     dom.typeInput.disabled = false;
-    dom.autocompleteList.style.display = "none";
     dom.currentFlagImg.src = getFlagUrl(country.code, 320);
-    dom.currentFlagImg.alt = `Flag to guess`;
+    dom.currentFlagImg.alt = "Flag to guess";
 
-    // Only autofocus if it's the player's turn
     if (state.gameMode === "solo" || 
         state.gameMode === "pvp-local" || 
         (state.gameMode === "pvp-online" && state.pvp.activePlayer === state.pvp.myPlayerNumber)) {
@@ -334,7 +330,7 @@
           dom.turnBanner.className = state.pvp.activePlayer === 1 ? "turn-banner player-1" : "turn-banner player-2";
           dom.turnBanner.textContent = `⚡ YOUR TURN (Flag ${flagNum}/${state.pvp.totalRounds}) — Type the country!`;
           dom.typeInput.disabled = false;
-          dom.typeInput.placeholder = "Type country name (e.g. France)...";
+          dom.typeInput.placeholder = "Type country name...";
           dom.typeInput.focus();
         } else {
           dom.turnBanner.className = state.pvp.activePlayer === 1 ? "turn-banner player-1" : "turn-banner player-2";
@@ -357,46 +353,26 @@
     }
   }
 
-  // --- GUESS SUBMISSION ---
+  // --- GUESS SUBMISSION (TYPOS COUNT AS GOOD ANSWER) ---
   function submitGuess() {
     if (state.isAnsweringLocked) return;
     const rawGuess = dom.typeInput.value.trim();
     if (!rawGuess) return;
 
-    // Check if input matches any known country (exact or autocorrect)
-    const match = findBestCountryMatch(rawGuess);
-
-    // If input doesn't match any real country
-    if (!match) {
-      soundManager.playTone(330, "sine", 0.12, 0, 0.1);
-      dom.typeInput.classList.add("invalid");
-      showFeedback(`⚠️ Invalid country! "${rawGuess}" does not exist.`, "invalid");
-
-      setTimeout(() => {
-        dom.typeInput.classList.remove("invalid");
-        dom.typeInput.disabled = false;
-        dom.typeInput.focus();
-        dom.typeInput.select();
-      }, 700);
-      return;
-    }
-
-    state.isAnsweringLocked = true;
-    dom.typeInput.disabled = true;
-    state.stats.totalGuesses++;
-
+    const query = cleanString(rawGuess);
     const curr = state.currentCountry;
-    const isCorrect = match.country.code === curr.code;
 
-    if (isCorrect) {
+    // 1. Check if the guess matches the CURRENT country (with typos accepted as good answer!)
+    const isGoodAnswer = matchesCountry(query, curr);
+
+    if (isGoodAnswer) {
+      state.isAnsweringLocked = true;
+      dom.typeInput.disabled = true;
+      state.stats.totalGuesses++;
+
       soundManager.playCorrect();
       dom.typeInput.classList.add("correct");
-
-      let bannerText = `🎉 Correct: ${curr.name}! (+10 pts)`;
-      if (match.autocorrected) {
-        bannerText = `✨ Autocorrected: "${rawGuess}" ➔ ${curr.name}! (+10 pts)`;
-      }
-      showFeedback(bannerText, "correct");
+      showFeedback(`🎉 Correct: ${curr.name}! (+10 pts)`, "correct");
 
       if (state.gameMode === "solo") {
         state.solo.score += 10;
@@ -419,7 +395,7 @@
           pickNextSoloFlag();
         }, 800);
       } else {
-        // PvP Mode (Local or Online)
+        // PvP Mode
         if (state.pvp.activePlayer === 1) {
           state.pvp.scoreP1 += 10;
         } else {
@@ -434,8 +410,7 @@
             scoreP1: state.pvp.scoreP1,
             scoreP2: state.pvp.scoreP2,
             countryName: curr.name,
-            rawGuess: rawGuess,
-            autocorrected: match.autocorrected
+            rawGuess: rawGuess
           });
         }
 
@@ -446,47 +421,70 @@
           advancePvpTurn();
         }, 850);
       }
-    } else {
-      // Incorrect
-      soundManager.playWrong();
-      dom.typeInput.classList.add("wrong");
-      showFeedback(`❌ Incorrect! That was ${curr.name}.`, true);
+      return;
+    }
 
-      if (state.gameMode === "solo") {
-        state.solo.streak = 0;
-        state.solo.lives -= 1;
-        saveStats();
-        updateHUD();
+    // 2. It didn't match the current country. Check if what was typed is ANY real country at all:
+    const otherCountry = findAnyCountryMatch(rawGuess);
 
-        if (state.solo.lives <= 0) {
-          setTimeout(() => {
-            dom.typeInput.classList.remove("wrong");
-            endSoloGame();
-          }, 1100);
-        } else {
-          setTimeout(() => {
-            dom.typeInput.classList.remove("wrong");
-            pickNextSoloFlag();
-          }, 1200);
-        }
-      } else {
-        // PvP Mode
-        if (state.pvp.isOnline) {
-          mpManager.send({
-            type: "GUESS_RESULT",
-            player: state.pvp.activePlayer,
-            correct: false,
-            scoreP1: state.pvp.scoreP1,
-            scoreP2: state.pvp.scoreP2,
-            countryName: curr.name
-          });
-        }
+    if (!otherCountry) {
+      // It does not resemble ANY country in the world -> Invalid country (no penalty)
+      soundManager.playTone(330, "sine", 0.12, 0, 0.1);
+      dom.typeInput.classList.add("invalid");
+      showFeedback(`⚠️ Invalid country! "${rawGuess}" does not exist.`, "invalid");
 
+      setTimeout(() => {
+        dom.typeInput.classList.remove("invalid");
+        dom.typeInput.disabled = false;
+        dom.typeInput.focus();
+        dom.typeInput.select();
+      }, 700);
+      return;
+    }
+
+    // 3. It was a valid country, but the WRONG country for this flag -> Incorrect guess
+    state.isAnsweringLocked = true;
+    dom.typeInput.disabled = true;
+    state.stats.totalGuesses++;
+
+    soundManager.playWrong();
+    dom.typeInput.classList.add("wrong");
+    showFeedback(`❌ Incorrect! That was ${curr.name}.`, "wrong");
+
+    if (state.gameMode === "solo") {
+      state.solo.streak = 0;
+      state.solo.lives -= 1;
+      saveStats();
+      updateHUD();
+
+      if (state.solo.lives <= 0) {
         setTimeout(() => {
           dom.typeInput.classList.remove("wrong");
-          advancePvpTurn();
+          endSoloGame();
+        }, 1100);
+      } else {
+        setTimeout(() => {
+          dom.typeInput.classList.remove("wrong");
+          pickNextSoloFlag();
         }, 1200);
       }
+    } else {
+      // PvP Mode
+      if (state.pvp.isOnline) {
+        mpManager.send({
+          type: "GUESS_RESULT",
+          player: state.pvp.activePlayer,
+          correct: false,
+          scoreP1: state.pvp.scoreP1,
+          scoreP2: state.pvp.scoreP2,
+          countryName: curr.name
+        });
+      }
+
+      setTimeout(() => {
+        dom.typeInput.classList.remove("wrong");
+        advancePvpTurn();
+      }, 1200);
     }
   }
 
@@ -496,7 +494,6 @@
     if (state.pvp.currentTurnIndex >= state.pvp.totalRounds) {
       endPvpGame();
     } else {
-      // Alternate turn
       state.pvp.activePlayer = state.pvp.activePlayer === 1 ? 2 : 1;
       const nextCode = state.pvp.flagSequence[state.pvp.currentTurnIndex];
       const nextCountry = COUNTRIES_DATA.find(c => c.code === nextCode);
@@ -519,43 +516,6 @@
     state.feedbackTimeout = setTimeout(() => {
       dom.feedbackBanner.style.display = "none";
     }, 2200);
-  }
-
-  // --- AUTOCOMPLETE SUGGESTIONS ---
-  function handleAutocomplete() {
-    const val = cleanString(dom.typeInput.value);
-    if (val.length < 1) {
-      dom.autocompleteList.style.display = "none";
-      return;
-    }
-
-    const matches = COUNTRIES_DATA.filter(c => {
-      const cleanN = cleanString(c.name);
-      const aliasMatch = c.aliases && c.aliases.some(a => cleanString(a).includes(val));
-      return cleanN.includes(val) || aliasMatch;
-    }).slice(0, 5);
-
-    if (matches.length === 0) {
-      dom.autocompleteList.style.display = "none";
-      return;
-    }
-
-    dom.autocompleteList.innerHTML = "";
-    matches.forEach(c => {
-      const item = document.createElement("div");
-      item.className = "autocomplete-item";
-      item.innerHTML = `
-        <span>${c.name}</span>
-        <span class="item-continent">🌍 ${c.continent}</span>
-      `;
-      item.addEventListener("click", () => {
-        dom.typeInput.value = c.name;
-        dom.autocompleteList.style.display = "none";
-        submitGuess();
-      });
-      dom.autocompleteList.appendChild(item);
-    });
-    dom.autocompleteList.style.display = "block";
   }
 
   // --- PVP ONLINE MANAGEMENT (4-Digit Room Code) ---
@@ -597,7 +557,6 @@
       // onOpponentJoined
       () => {
         soundManager.playStreak();
-        // Generate match flags and start
         const seq = generateFlagSequence(10);
         state.pvp.isOnline = true;
         state.pvp.flagSequence = seq;
@@ -681,14 +640,10 @@
 
       if (data.correct) {
         soundManager.playCorrect();
-        let txt = `Player ${data.player} got ${data.countryName}! (+10 pts)`;
-        if (data.autocorrected) {
-          txt = `Player ${data.player} autocorrected "${data.rawGuess}" ➔ ${data.countryName}! (+10 pts)`;
-        }
-        showFeedback(txt, false);
+        showFeedback(`Player ${data.player} got ${data.countryName}! (+10 pts)`, "correct");
       } else {
         soundManager.playWrong();
-        showFeedback(`Player ${data.player} missed! (Answer: ${data.countryName})`, true);
+        showFeedback(`Player ${data.player} missed! (Answer: ${data.countryName})`, "wrong");
       }
 
       setTimeout(() => {
@@ -787,37 +742,6 @@
     soundManager.playStreak();
     confettiEngine.fire(110);
     dom.pvpGameoverModal.classList.add("active");
-  }
-
-  // --- ENCYCLOPEDIA ---
-  function renderEncyclopedia(filterText = "") {
-    if (!dom.encyclopediaGrid) return;
-    dom.encyclopediaGrid.innerHTML = "";
-    const term = filterText.toLowerCase().trim();
-
-    const filtered = COUNTRIES_DATA.filter(c => {
-      return (
-        c.name.toLowerCase().includes(term) ||
-        c.capital.toLowerCase().includes(term) ||
-        c.continent.toLowerCase().includes(term)
-      );
-    });
-
-    filtered.forEach(c => {
-      const card = document.createElement("div");
-      card.className = "encyclopedia-card";
-      card.innerHTML = `
-        <div class="thumb">
-          <img src="${getFlagUrl(c.code, 320)}" alt="${c.name} Flag" loading="lazy">
-        </div>
-        <div class="info">
-          <span class="name" title="${c.name}">${c.name}</span>
-          <span class="capital">🏛️ ${c.capital}</span>
-          <span style="font-size: 0.72rem; color: var(--text-dim); margin-top: 2px;">🌍 ${c.continent}</span>
-        </div>
-      `;
-      dom.encyclopediaGrid.appendChild(card);
-    });
   }
 
   // --- EVENT LISTENERS ---
@@ -955,46 +879,16 @@
       pickNextSoloFlag();
     });
 
-    // Tabs
-    dom.playTab.addEventListener("click", () => {
-      soundManager.playClick();
-      dom.playTab.classList.add("active");
-      dom.studyTab.classList.remove("active");
-      dom.playView.style.display = "flex";
-      dom.studyView.style.display = "none";
-    });
-
-    dom.studyTab.addEventListener("click", () => {
-      soundManager.playClick();
-      dom.studyTab.classList.add("active");
-      dom.playTab.classList.remove("active");
-      dom.playView.style.display = "none";
-      dom.studyView.style.display = "flex";
-      renderEncyclopedia(dom.studySearchInput.value);
-    });
-
     dom.brandHome.addEventListener("click", () => {
-      dom.playTab.click();
+      dom.modeSolo.click();
     });
 
-    // Input & Autocomplete
+    // Input submission
     dom.typeSubmitBtn.addEventListener("click", submitGuess);
     dom.typeInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
-        dom.autocompleteList.style.display = "none";
         submitGuess();
       }
-    });
-    dom.typeInput.addEventListener("input", handleAutocomplete);
-
-    document.addEventListener("click", (e) => {
-      if (dom.autocompleteList && !dom.typeInput.contains(e.target) && !dom.autocompleteList.contains(e.target)) {
-        dom.autocompleteList.style.display = "none";
-      }
-    });
-
-    dom.studySearchInput.addEventListener("input", (e) => {
-      renderEncyclopedia(e.target.value);
     });
 
     // Keyboard Shortcuts
@@ -1016,7 +910,6 @@
     loadStats();
     updateSoundButton();
     setupEventListeners();
-    renderEncyclopedia();
 
     // Check URL parameters for invite code (?room=1234 or ?duel=1234)
     const urlParams = new URLSearchParams(window.location.search);
@@ -1034,7 +927,7 @@
     }
   }
 
-  // Robust initialization regardless of document ready state
+  // Robust initialization
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {
