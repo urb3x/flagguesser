@@ -1,4 +1,4 @@
-// Flag Guesser — Typing-First with Autocorrect & 1v1 PvP Duel
+// Flag Guesser — Typing-First with Autocorrect & 1v1 PvP Duel via 4-Digit Code
 (function () {
   // Levenshtein Distance for Fuzzy Autocorrect
   function levenshtein(a, b) {
@@ -15,9 +15,9 @@
           matrix[j][i] = matrix[j - 1][i - 1];
         } else {
           matrix[j][i] = Math.min(
-            matrix[j - 1][i - 1] + 1, // substitution
-            matrix[j][i - 1] + 1,     // insertion
-            matrix[j - 1][i] + 1      // deletion
+            matrix[j - 1][i - 1] + 1,
+            matrix[j][i - 1] + 1,
+            matrix[j - 1][i] + 1
           );
         }
       }
@@ -26,10 +26,9 @@
   }
 
   function cleanString(str) {
-    return str.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+    return str ? str.toLowerCase().trim().replace(/[^a-z0-9]/g, "") : "";
   }
 
-  // Find country match with fuzzy autocorrect
   function findBestCountryMatch(rawInput) {
     const query = cleanString(rawInput);
     if (!query) return null;
@@ -48,7 +47,7 @@
       }
     }
 
-    // 2. Fuzzy Levenshtein match across all countries and aliases
+    // 2. Fuzzy Levenshtein match
     let bestMatch = null;
     let minDistance = Infinity;
 
@@ -57,8 +56,6 @@
       for (const cand of candidates) {
         const cleanCand = cleanString(cand);
         const dist = levenshtein(query, cleanCand);
-        
-        // Allowed distance based on length of target name
         const maxAllowedDist = cleanCand.length <= 4 ? 1 : cleanCand.length <= 7 ? 2 : 3;
 
         if (dist <= maxAllowedDist && dist < minDistance) {
@@ -77,16 +74,17 @@
     return bestMatch;
   }
 
-  // Game State
+  // Application State
   const state = {
-    gameMode: "solo", // "solo" or "pvp"
+    view: "play",      // "play" or "study"
+    gameMode: "solo",  // "solo", "pvp-online", "pvp-local"
     currentCountry: null,
     usedCountryCodes: new Set(),
     selectedContinent: "all",
     isAnsweringLocked: false,
     feedbackTimeout: null,
 
-    // Solo State
+    // Solo Mode
     solo: {
       score: 0,
       streak: 0,
@@ -97,14 +95,19 @@
 
     // PvP State
     pvp: {
+      isOnline: false,
+      isHost: false,
+      roomCode: null,
+      flagSequence: [], // Array of country codes for the match
+      currentTurnIndex: 0,
       totalRounds: 10,
-      currentTurnIndex: 0, // 0 to totalRounds - 1
-      activePlayer: 1,     // 1 or 2
+      activePlayer: 1, // 1 or 2
       scoreP1: 0,
-      scoreP2: 0
+      scoreP2: 0,
+      myPlayerNumber: 1 // 1 for host / P1, 2 for guest / P2
     },
 
-    // Statistics
+    // Overall Stats
     stats: {
       played: 0,
       correct: 0,
@@ -114,78 +117,96 @@
     }
   };
 
-  // DOM Elements
-  const dom = {
-    playTab: document.getElementById("tab-play"),
-    studyTab: document.getElementById("tab-study"),
-    playView: document.getElementById("play-view"),
-    studyView: document.getElementById("study-view"),
-    brandHome: document.getElementById("brand-home"),
+  let dom = {};
 
-    soundBtn: document.getElementById("sound-btn"),
-    statsBtn: document.getElementById("stats-btn"),
-    closeStatsBtn: document.getElementById("close-stats-btn"),
-    statsModal: document.getElementById("stats-modal"),
-    resetStatsBtn: document.getElementById("reset-stats-btn"),
-    shareStatsBtn: document.getElementById("share-stats-btn"),
+  function cacheDOMElements() {
+    dom = {
+      playTab: document.getElementById("tab-play"),
+      studyTab: document.getElementById("tab-study"),
+      playView: document.getElementById("play-view"),
+      studyView: document.getElementById("study-view"),
+      brandHome: document.getElementById("brand-home"),
 
-    modeSolo: document.getElementById("mode-solo"),
-    modePvp: document.getElementById("mode-pvp"),
-    continentFilter: document.getElementById("continent-filter"),
-    pvpRoundsSelect: document.getElementById("pvp-rounds-select"),
+      soundBtn: document.getElementById("sound-btn"),
+      statsBtn: document.getElementById("stats-btn"),
+      closeStatsBtn: document.getElementById("close-stats-btn"),
+      statsModal: document.getElementById("stats-modal"),
+      resetStatsBtn: document.getElementById("reset-stats-btn"),
+      shareStatsBtn: document.getElementById("share-stats-btn"),
 
-    // Solo HUD
-    soloHud: document.getElementById("solo-hud"),
-    hudScore: document.getElementById("hud-score"),
-    hudStreak: document.getElementById("hud-streak"),
-    hudLives: document.getElementById("hud-lives"),
+      modeSolo: document.getElementById("mode-solo"),
+      modePvp: document.getElementById("mode-pvp"),
+      continentFilter: document.getElementById("continent-filter"),
+      filterBar: document.getElementById("filter-bar"),
 
-    // PvP Scoreboard
-    pvpScoreboard: document.getElementById("pvp-scoreboard"),
-    pvpCardP1: document.getElementById("pvp-card-p1"),
-    pvpScoreP1: document.getElementById("pvp-score-p1"),
-    pvpBadgeP1: document.getElementById("pvp-badge-p1"),
-    pvpCardP2: document.getElementById("pvp-card-p2"),
-    pvpScoreP2: document.getElementById("pvp-score-p2"),
-    pvpBadgeP2: document.getElementById("pvp-badge-p2"),
-    pvpRoundText: document.getElementById("pvp-round-text"),
-    turnBanner: document.getElementById("turn-banner"),
+      // PvP Lobby
+      pvpLobby: document.getElementById("pvp-lobby"),
+      hostIdleSection: document.getElementById("host-idle-section"),
+      hostActiveSection: document.getElementById("host-active-section"),
+      createRoomBtn: document.getElementById("create-room-btn"),
+      roomCodeDisplay: document.getElementById("room-code-display"),
+      copyInviteBtn: document.getElementById("copy-invite-btn"),
+      joinCodeInput: document.getElementById("join-code-input"),
+      joinRoomBtn: document.getElementById("join-room-btn"),
+      joinErrorMsg: document.getElementById("join-error-msg"),
+      localDuelBtn: document.getElementById("local-duel-btn"),
 
-    // Game Arena
-    gameCard: document.getElementById("game-card"),
-    currentFlagImg: document.getElementById("current-flag-img"),
-    feedbackBanner: document.getElementById("feedback-banner"),
-    typeInput: document.getElementById("type-input"),
-    typeSubmitBtn: document.getElementById("type-submit-btn"),
-    autocompleteList: document.getElementById("autocomplete-list"),
+      // PvP Scoreboard
+      pvpScoreboard: document.getElementById("pvp-scoreboard"),
+      pvpCardP1: document.getElementById("pvp-card-p1"),
+      pvpNameP1: document.getElementById("pvp-name-p1"),
+      pvpScoreP1: document.getElementById("pvp-score-p1"),
+      pvpBadgeP1: document.getElementById("pvp-badge-p1"),
+      pvpCardP2: document.getElementById("pvp-card-p2"),
+      pvpNameP2: document.getElementById("pvp-name-p2"),
+      pvpScoreP2: document.getElementById("pvp-score-p2"),
+      pvpBadgeP2: document.getElementById("pvp-badge-p2"),
+      pvpRoundText: document.getElementById("pvp-round-text"),
+      turnBanner: document.getElementById("turn-banner"),
 
-    // Modals
-    soloGameoverModal: document.getElementById("solo-gameover-modal"),
-    soloFinalScore: document.getElementById("solo-final-score"),
-    soloRoundStreak: document.getElementById("solo-round-streak"),
-    soloPlayAgainBtn: document.getElementById("solo-play-again-btn"),
+      // Solo HUD
+      soloHud: document.getElementById("solo-hud"),
+      hudScore: document.getElementById("hud-score"),
+      hudStreak: document.getElementById("hud-streak"),
+      hudLives: document.getElementById("hud-lives"),
 
-    pvpGameoverModal: document.getElementById("pvp-gameover-modal"),
-    pvpWinnerTitle: document.getElementById("pvp-winner-title"),
-    pvpWinnerSubtitle: document.getElementById("pvp-winner-subtitle"),
-    pvpFinalP1: document.getElementById("pvp-final-p1"),
-    pvpFinalP2: document.getElementById("pvp-final-p2"),
-    pvpRematchBtn: document.getElementById("pvp-rematch-btn"),
+      // Arena
+      gameCard: document.getElementById("game-card"),
+      currentFlagImg: document.getElementById("current-flag-img"),
+      feedbackBanner: document.getElementById("feedback-banner"),
+      typeInput: document.getElementById("type-input"),
+      typeSubmitBtn: document.getElementById("type-submit-btn"),
+      autocompleteList: document.getElementById("autocomplete-list"),
 
-    // Study
-    studySearchInput: document.getElementById("study-search-input"),
-    encyclopediaGrid: document.getElementById("encyclopedia-grid")
-  };
+      // Modals
+      soloGameoverModal: document.getElementById("solo-gameover-modal"),
+      soloFinalScore: document.getElementById("solo-final-score"),
+      soloRoundStreak: document.getElementById("solo-round-streak"),
+      soloPlayAgainBtn: document.getElementById("solo-play-again-btn"),
 
-  // --- STATS MANAGEMENT ---
+      pvpGameoverModal: document.getElementById("pvp-gameover-modal"),
+      pvpWinnerTitle: document.getElementById("pvp-winner-title"),
+      pvpWinnerSubtitle: document.getElementById("pvp-winner-subtitle"),
+      pvpFinalP1: document.getElementById("pvp-final-p1"),
+      pvpFinalP2: document.getElementById("pvp-final-p2"),
+      pvpLabelP1: document.getElementById("pvp-label-p1"),
+      pvpLabelP2: document.getElementById("pvp-label-p2"),
+      pvpRematchBtn: document.getElementById("pvp-rematch-btn"),
+      pvpLeaveBtn: document.getElementById("pvp-leave-btn"),
+
+      // Study
+      studySearchInput: document.getElementById("study-search-input"),
+      encyclopediaGrid: document.getElementById("encyclopedia-grid")
+    };
+  }
+
+  // --- STATS ---
   function loadStats() {
     const saved = localStorage.getItem("flagguesser_stats");
     if (saved) {
       try {
         state.stats = { ...state.stats, ...JSON.parse(saved) };
-      } catch (e) {
-        console.error("Could not parse stats", e);
-      }
+      } catch (e) {}
     }
     updateStatsModalUI();
   }
@@ -196,20 +217,29 @@
   }
 
   function updateStatsModalUI() {
-    document.getElementById("stat-games-played").textContent = state.stats.played;
-    document.getElementById("stat-high-score").textContent = state.stats.highScore;
-    document.getElementById("stat-best-streak").textContent = state.stats.bestStreak;
-    const accuracy = state.stats.totalGuesses > 0 
-      ? Math.round((state.stats.correct / state.stats.totalGuesses) * 100) 
-      : 0;
-    document.getElementById("stat-accuracy").textContent = `${accuracy}%`;
+    const elPlayed = document.getElementById("stat-games-played");
+    const elHigh = document.getElementById("stat-high-score");
+    const elBest = document.getElementById("stat-best-streak");
+    const elAcc = document.getElementById("stat-accuracy");
+
+    if (elPlayed) elPlayed.textContent = state.stats.played;
+    if (elHigh) elHigh.textContent = state.stats.highScore;
+    if (elBest) elBest.textContent = state.stats.bestStreak;
+    if (elAcc) {
+      const acc = state.stats.totalGuesses > 0 
+        ? Math.round((state.stats.correct / state.stats.totalGuesses) * 100) 
+        : 0;
+      elAcc.textContent = `${acc}%`;
+    }
   }
 
   function updateSoundButton() {
-    dom.soundBtn.textContent = soundManager.isMuted() ? "🔇" : "🔊";
+    if (dom.soundBtn) {
+      dom.soundBtn.textContent = soundManager.isMuted() ? "🔇" : "🔊";
+    }
   }
 
-  // --- POOL FILTERING & PICKING ---
+  // --- SOLO POOL & FLAG PICKING ---
   function getFilteredPool() {
     let pool = COUNTRIES_DATA;
     if (state.selectedContinent !== "all") {
@@ -218,37 +248,49 @@
     return pool.length > 0 ? pool : COUNTRIES_DATA;
   }
 
-  function pickNextFlag() {
+  function loadFlag(country) {
+    state.currentCountry = country;
     state.isAnsweringLocked = false;
     dom.typeInput.value = "";
     dom.typeInput.disabled = false;
     dom.autocompleteList.style.display = "none";
-    dom.typeInput.focus();
+    dom.currentFlagImg.src = getFlagUrl(country.code, 320);
+    dom.currentFlagImg.alt = `Flag to guess`;
 
+    // Only autofocus if it's the player's turn
+    if (state.gameMode === "solo" || 
+        state.gameMode === "pvp-local" || 
+        (state.gameMode === "pvp-online" && state.pvp.activePlayer === state.pvp.myPlayerNumber)) {
+      setTimeout(() => dom.typeInput.focus(), 50);
+    } else {
+      dom.typeInput.disabled = true;
+    }
+
+    updateHUD();
+  }
+
+  function pickNextSoloFlag() {
     const pool = getFilteredPool();
     if (state.usedCountryCodes.size >= pool.length) {
       state.usedCountryCodes.clear();
     }
-
     const available = pool.filter(c => !state.usedCountryCodes.has(c.code));
     const targetPool = available.length > 0 ? available : pool;
     const target = targetPool[Math.floor(Math.random() * targetPool.length)];
-    state.currentCountry = target;
     state.usedCountryCodes.add(target.code);
 
-    // Update flag image
-    dom.currentFlagImg.src = getFlagUrl(target.code, 320);
-    dom.currentFlagImg.alt = "Mystery Flag";
-
-    updateUIState();
+    loadFlag(target);
   }
 
-  function updateUIState() {
+  // --- HUD RENDERING ---
+  function updateHUD() {
     if (state.gameMode === "solo") {
-      dom.soloHud.style.display = "flex";
+      dom.pvpLobby.style.display = "none";
       dom.pvpScoreboard.style.display = "none";
       dom.turnBanner.style.display = "none";
-      dom.pvpRoundsSelect.style.display = "none";
+      dom.soloHud.style.display = "flex";
+      dom.filterBar.style.display = "flex";
+      dom.gameCard.style.display = "flex";
 
       dom.hudScore.textContent = state.solo.score;
       dom.hudStreak.textContent = `🔥 ${state.solo.streak}`;
@@ -257,40 +299,65 @@
       for (let i = 0; i < state.solo.lives; i++) hearts += "❤️";
       for (let i = state.solo.lives; i < state.solo.maxLives; i++) hearts += "🖤";
       dom.hudLives.textContent = hearts;
-    } else {
-      // PvP Mode
+    } else if (state.gameMode === "pvp-lobby") {
+      dom.pvpLobby.style.display = "flex";
+      dom.pvpScoreboard.style.display = "none";
+      dom.turnBanner.style.display = "none";
       dom.soloHud.style.display = "none";
+      dom.filterBar.style.display = "none";
+      dom.gameCard.style.display = "none";
+    } else {
+      // Active PvP match (online or local)
+      dom.pvpLobby.style.display = "none";
       dom.pvpScoreboard.style.display = "grid";
       dom.turnBanner.style.display = "block";
-      dom.pvpRoundsSelect.style.display = "block";
+      dom.soloHud.style.display = "none";
+      dom.filterBar.style.display = "none";
+      dom.gameCard.style.display = "flex";
 
       dom.pvpScoreP1.textContent = state.pvp.scoreP1;
       dom.pvpScoreP2.textContent = state.pvp.scoreP2;
 
-      const roundNum = state.pvp.currentTurnIndex + 1;
-      dom.pvpRoundText.textContent = `Flag ${roundNum} / ${state.pvp.totalRounds}`;
+      const flagNum = state.pvp.currentTurnIndex + 1;
+      dom.pvpRoundText.textContent = `Flag ${flagNum} / ${state.pvp.totalRounds}`;
 
-      if (state.pvp.activePlayer === 1) {
-        dom.pvpCardP1.classList.add("active-turn");
-        dom.pvpCardP2.classList.remove("active-turn");
-        dom.pvpBadgeP1.textContent = "Your Turn";
-        dom.pvpBadgeP2.textContent = "Waiting";
+      const isP1 = state.pvp.activePlayer === 1;
+      dom.pvpCardP1.classList.toggle("active-turn", isP1);
+      dom.pvpCardP2.classList.toggle("active-turn", !isP1);
 
-        dom.turnBanner.className = "turn-banner player-1";
-        dom.turnBanner.textContent = `🔵 Player 1's Turn (Flag ${roundNum}/${state.pvp.totalRounds})`;
+      if (state.pvp.isOnline) {
+        const isMyTurn = state.pvp.activePlayer === state.pvp.myPlayerNumber;
+        dom.pvpBadgeP1.textContent = state.pvp.myPlayerNumber === 1 ? (isP1 ? "Your Turn" : "Waiting") : (isP1 ? "Their Turn" : "Waiting");
+        dom.pvpBadgeP2.textContent = state.pvp.myPlayerNumber === 2 ? (!isP1 ? "Your Turn" : "Waiting") : (!isP1 ? "Their Turn" : "Waiting");
+
+        if (isMyTurn) {
+          dom.turnBanner.className = state.pvp.activePlayer === 1 ? "turn-banner player-1" : "turn-banner player-2";
+          dom.turnBanner.textContent = `⚡ YOUR TURN (Flag ${flagNum}/${state.pvp.totalRounds}) — Type the country!`;
+          dom.typeInput.disabled = false;
+          dom.typeInput.placeholder = "Type country name (e.g. France)...";
+          dom.typeInput.focus();
+        } else {
+          dom.turnBanner.className = state.pvp.activePlayer === 1 ? "turn-banner player-1" : "turn-banner player-2";
+          dom.turnBanner.textContent = `⏳ Opponent is guessing (Flag ${flagNum}/${state.pvp.totalRounds})...`;
+          dom.typeInput.disabled = true;
+          dom.typeInput.placeholder = "Opponent's turn to guess...";
+        }
       } else {
-        dom.pvpCardP2.classList.add("active-turn");
-        dom.pvpCardP1.classList.remove("active-turn");
-        dom.pvpBadgeP2.textContent = "Your Turn";
-        dom.pvpBadgeP1.textContent = "Waiting";
+        // Local duel
+        dom.pvpBadgeP1.textContent = isP1 ? "Your Turn" : "Waiting";
+        dom.pvpBadgeP2.textContent = !isP1 ? "Your Turn" : "Waiting";
 
-        dom.turnBanner.className = "turn-banner player-2";
-        dom.turnBanner.textContent = `🟠 Player 2's Turn (Flag ${roundNum}/${state.pvp.totalRounds})`;
+        dom.turnBanner.className = isP1 ? "turn-banner player-1" : "turn-banner player-2";
+        dom.turnBanner.textContent = isP1 
+          ? `🔵 Player 1's Turn (Flag ${flagNum}/${state.pvp.totalRounds})`
+          : `🟠 Player 2's Turn (Flag ${flagNum}/${state.pvp.totalRounds})`;
+        dom.typeInput.disabled = false;
+        dom.typeInput.focus();
       }
     }
   }
 
-  // --- GUESS SUBMISSION & AUTOCORRECT LOGIC ---
+  // --- GUESS SUBMISSION ---
   function submitGuess() {
     if (state.isAnsweringLocked) return;
     const rawGuess = dom.typeInput.value.trim();
@@ -300,10 +367,8 @@
     dom.typeInput.disabled = true;
     state.stats.totalGuesses++;
 
-    // Find best match with fuzzy autocorrect
     const match = findBestCountryMatch(rawGuess);
     const curr = state.currentCountry;
-
     const isCorrect = match && match.country.code === curr.code;
 
     if (isCorrect) {
@@ -330,39 +395,51 @@
         }
 
         saveStats();
-        updateUIState();
+        updateHUD();
 
         setTimeout(() => {
           dom.typeInput.classList.remove("correct");
-          pickNextFlag();
+          pickNextSoloFlag();
         }, 800);
       } else {
-        // PvP Mode: Award points to active player
+        // PvP Mode (Local or Online)
         if (state.pvp.activePlayer === 1) {
           state.pvp.scoreP1 += 10;
         } else {
           state.pvp.scoreP2 += 10;
         }
-        updateUIState();
+
+        if (state.pvp.isOnline) {
+          mpManager.send({
+            type: "GUESS_RESULT",
+            player: state.pvp.activePlayer,
+            correct: true,
+            scoreP1: state.pvp.scoreP1,
+            scoreP2: state.pvp.scoreP2,
+            countryName: curr.name,
+            rawGuess: rawGuess,
+            autocorrected: match.autocorrected
+          });
+        }
+
+        updateHUD();
 
         setTimeout(() => {
           dom.typeInput.classList.remove("correct");
           advancePvpTurn();
-        }, 900);
+        }, 850);
       }
     } else {
-      // Incorrect answer
+      // Incorrect
       soundManager.playWrong();
       dom.typeInput.classList.add("wrong");
-
-      const bannerText = `❌ Incorrect! That was ${curr.name}.`;
-      showFeedback(bannerText, true);
+      showFeedback(`❌ Incorrect! That was ${curr.name}.`, true);
 
       if (state.gameMode === "solo") {
         state.solo.streak = 0;
         state.solo.lives -= 1;
         saveStats();
-        updateUIState();
+        updateHUD();
 
         if (state.solo.lives <= 0) {
           setTimeout(() => {
@@ -372,11 +449,22 @@
         } else {
           setTimeout(() => {
             dom.typeInput.classList.remove("wrong");
-            pickNextFlag();
+            pickNextSoloFlag();
           }, 1200);
         }
       } else {
-        // PvP Mode: No points, advance turn
+        // PvP Mode
+        if (state.pvp.isOnline) {
+          mpManager.send({
+            type: "GUESS_RESULT",
+            player: state.pvp.activePlayer,
+            correct: false,
+            scoreP1: state.pvp.scoreP1,
+            scoreP2: state.pvp.scoreP2,
+            countryName: curr.name
+          });
+        }
+
         setTimeout(() => {
           dom.typeInput.classList.remove("wrong");
           advancePvpTurn();
@@ -391,9 +479,11 @@
     if (state.pvp.currentTurnIndex >= state.pvp.totalRounds) {
       endPvpGame();
     } else {
-      // Alternate between player 1 and player 2
+      // Alternate turn
       state.pvp.activePlayer = state.pvp.activePlayer === 1 ? 2 : 1;
-      pickNextFlag();
+      const nextCode = state.pvp.flagSequence[state.pvp.currentTurnIndex];
+      const nextCountry = COUNTRIES_DATA.find(c => c.code === nextCode);
+      loadFlag(nextCountry);
     }
   }
 
@@ -447,25 +537,189 @@
     dom.autocompleteList.style.display = "block";
   }
 
-  // --- GAME RESET & ENDINGS ---
-  function resetGame() {
-    state.usedCountryCodes.clear();
-
-    if (state.gameMode === "solo") {
-      state.solo.score = 0;
-      state.solo.streak = 0;
-      state.solo.lives = state.solo.maxLives;
-    } else {
-      state.pvp.scoreP1 = 0;
-      state.pvp.scoreP2 = 0;
-      state.pvp.currentTurnIndex = 0;
-      state.pvp.activePlayer = 1;
+  // --- PVP ONLINE MANAGEMENT (4-Digit Room Code) ---
+  function generateFlagSequence(length = 10) {
+    const shuffled = [...COUNTRIES_DATA];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
-
-    dom.feedbackBanner.style.display = "none";
-    pickNextFlag();
+    return shuffled.slice(0, length).map(c => c.code);
   }
 
+  function display4DigitCode(code) {
+    const digits = code.split("");
+    dom.roomCodeDisplay.innerHTML = "";
+    digits.forEach(d => {
+      const span = document.createElement("span");
+      span.className = "code-digit";
+      span.textContent = d;
+      dom.roomCodeDisplay.appendChild(span);
+    });
+  }
+
+  function hostCreateRoom() {
+    soundManager.playClick();
+    dom.createRoomBtn.disabled = true;
+    dom.createRoomBtn.textContent = "Creating Room...";
+
+    mpManager.createRoom(
+      // onCreated
+      (code) => {
+        state.pvp.roomCode = code;
+        state.pvp.isHost = true;
+        state.pvp.myPlayerNumber = 1;
+        dom.hostIdleSection.style.display = "none";
+        dom.hostActiveSection.style.display = "flex";
+        display4DigitCode(code);
+      },
+      // onOpponentJoined
+      () => {
+        soundManager.playStreak();
+        // Generate match flags and start
+        const seq = generateFlagSequence(10);
+        state.pvp.isOnline = true;
+        state.pvp.flagSequence = seq;
+        state.pvp.totalRounds = seq.length;
+        state.pvp.currentTurnIndex = 0;
+        state.pvp.activePlayer = 1;
+        state.pvp.scoreP1 = 0;
+        state.pvp.scoreP2 = 0;
+
+        mpManager.send({
+          type: "START_MATCH",
+          flagSequence: seq,
+          totalRounds: seq.length
+        });
+
+        startPvpMatch();
+      },
+      // onData
+      handleNetworkData,
+      // onError
+      (err) => {
+        alert("Host error: " + err);
+        dom.createRoomBtn.disabled = false;
+        dom.createRoomBtn.textContent = "Create 4-Digit Room 🚀";
+        dom.hostIdleSection.style.display = "block";
+        dom.hostActiveSection.style.display = "none";
+      },
+      // onDisconnect
+      handleOpponentDisconnect
+    );
+  }
+
+  function joinExistingRoom(code) {
+    if (!code || code.length !== 4) {
+      dom.joinErrorMsg.textContent = "Please enter a valid 4-digit code!";
+      dom.joinErrorMsg.style.display = "block";
+      return;
+    }
+    soundManager.playClick();
+    dom.joinErrorMsg.style.display = "none";
+    dom.joinRoomBtn.disabled = true;
+    dom.joinRoomBtn.textContent = "Connecting...";
+
+    mpManager.joinRoom(
+      code,
+      // onConnected
+      () => {
+        soundManager.playStreak();
+        state.pvp.isOnline = true;
+        state.pvp.isHost = false;
+        state.pvp.myPlayerNumber = 2;
+        state.pvp.roomCode = code;
+      },
+      // onData
+      handleNetworkData,
+      // onError
+      (err) => {
+        dom.joinErrorMsg.textContent = err || "Could not find room with this code.";
+        dom.joinErrorMsg.style.display = "block";
+        dom.joinRoomBtn.disabled = false;
+        dom.joinRoomBtn.textContent = "Join Match ➔";
+      },
+      // onDisconnect
+      handleOpponentDisconnect
+    );
+  }
+
+  function handleNetworkData(data) {
+    if (data.type === "START_MATCH") {
+      state.pvp.isOnline = true;
+      state.pvp.flagSequence = data.flagSequence;
+      state.pvp.totalRounds = data.totalRounds;
+      state.pvp.currentTurnIndex = 0;
+      state.pvp.activePlayer = 1;
+      state.pvp.scoreP1 = 0;
+      state.pvp.scoreP2 = 0;
+      startPvpMatch();
+    } else if (data.type === "GUESS_RESULT") {
+      state.pvp.scoreP1 = data.scoreP1;
+      state.pvp.scoreP2 = data.scoreP2;
+
+      if (data.correct) {
+        soundManager.playCorrect();
+        let txt = `Player ${data.player} got ${data.countryName}! (+10 pts)`;
+        if (data.autocorrected) {
+          txt = `Player ${data.player} autocorrected "${data.rawGuess}" ➔ ${data.countryName}! (+10 pts)`;
+        }
+        showFeedback(txt, false);
+      } else {
+        soundManager.playWrong();
+        showFeedback(`Player ${data.player} missed! (Answer: ${data.countryName})`, true);
+      }
+
+      setTimeout(() => {
+        advancePvpTurn();
+      }, 1000);
+    } else if (data.type === "REMATCH") {
+      dom.pvpGameoverModal.classList.remove("active");
+      if (state.pvp.isHost) {
+        const seq = generateFlagSequence(10);
+        state.pvp.flagSequence = seq;
+        state.pvp.totalRounds = seq.length;
+        state.pvp.currentTurnIndex = 0;
+        state.pvp.activePlayer = 1;
+        state.pvp.scoreP1 = 0;
+        state.pvp.scoreP2 = 0;
+
+        mpManager.send({
+          type: "START_MATCH",
+          flagSequence: seq,
+          totalRounds: seq.length
+        });
+        startPvpMatch();
+      }
+    }
+  }
+
+  function handleOpponentDisconnect() {
+    alert("Your opponent has disconnected from the room.");
+    state.gameMode = "pvp-lobby";
+    updateHUD();
+  }
+
+  function startPvpMatch() {
+    state.gameMode = state.pvp.isOnline ? "pvp-online" : "pvp-local";
+    const firstCode = state.pvp.flagSequence[0];
+    const firstCountry = COUNTRIES_DATA.find(c => c.code === firstCode);
+    loadFlag(firstCountry);
+  }
+
+  function startLocalDuel() {
+    soundManager.playClick();
+    state.pvp.isOnline = false;
+    state.pvp.flagSequence = generateFlagSequence(10);
+    state.pvp.totalRounds = 10;
+    state.pvp.currentTurnIndex = 0;
+    state.pvp.activePlayer = 1;
+    state.pvp.scoreP1 = 0;
+    state.pvp.scoreP2 = 0;
+    startPvpMatch();
+  }
+
+  // --- GAME ENDINGS ---
   function endSoloGame() {
     soundManager.playGameOver();
     state.stats.played++;
@@ -487,14 +741,22 @@
     dom.pvpFinalP1.textContent = p1;
     dom.pvpFinalP2.textContent = p2;
 
+    if (state.pvp.isOnline) {
+      dom.pvpLabelP1.textContent = state.pvp.myPlayerNumber === 1 ? "🔵 You (P1)" : "🔵 Opponent (P1)";
+      dom.pvpLabelP2.textContent = state.pvp.myPlayerNumber === 2 ? "🟠 You (P2)" : "🟠 Opponent (P2)";
+    } else {
+      dom.pvpLabelP1.textContent = "🔵 Player 1 Score";
+      dom.pvpLabelP2.textContent = "🟠 Player 2 Score";
+    }
+
     if (p1 > p2) {
-      dom.pvpWinnerTitle.textContent = "👑 Player 1 Wins!";
+      dom.pvpWinnerTitle.textContent = state.pvp.isOnline && state.pvp.myPlayerNumber === 1 ? "👑 VICTORY! You Won!" : "👑 Player 1 Wins!";
       dom.pvpWinnerTitle.style.color = "var(--player-1)";
-      dom.pvpWinnerSubtitle.textContent = `Player 1 wins with ${p1} points against ${p2} points!`;
+      dom.pvpWinnerSubtitle.textContent = `P1 crushed it with ${p1} points vs ${p2} points!`;
     } else if (p2 > p1) {
-      dom.pvpWinnerTitle.textContent = "👑 Player 2 Wins!";
+      dom.pvpWinnerTitle.textContent = state.pvp.isOnline && state.pvp.myPlayerNumber === 2 ? "👑 VICTORY! You Won!" : "👑 Player 2 Wins!";
       dom.pvpWinnerTitle.style.color = "var(--player-2)";
-      dom.pvpWinnerSubtitle.textContent = `Player 2 wins with ${p2} points against ${p1} points!`;
+      dom.pvpWinnerSubtitle.textContent = `P2 crushed it with ${p2} points vs ${p1} points!`;
     } else {
       dom.pvpWinnerTitle.textContent = "🤝 It's a Tie!";
       dom.pvpWinnerTitle.style.color = "#38bdf8";
@@ -508,6 +770,7 @@
 
   // --- ENCYCLOPEDIA ---
   function renderEncyclopedia(filterText = "") {
+    if (!dom.encyclopediaGrid) return;
     dom.encyclopediaGrid.innerHTML = "";
     const term = filterText.toLowerCase().trim();
 
@@ -538,35 +801,91 @@
 
   // --- EVENT LISTENERS ---
   function setupEventListeners() {
-    // Mode Switch: Solo vs PvP
+    // Mode Switching
     dom.modeSolo.addEventListener("click", () => {
       soundManager.playClick();
       dom.modeSolo.classList.add("active");
       dom.modePvp.classList.remove("active");
       state.gameMode = "solo";
-      resetGame();
+      state.solo.score = 0;
+      state.solo.streak = 0;
+      state.solo.lives = state.solo.maxLives;
+      pickNextSoloFlag();
     });
 
     dom.modePvp.addEventListener("click", () => {
       soundManager.playClick();
       dom.modePvp.classList.add("active");
       dom.modeSolo.classList.remove("active");
-      state.gameMode = "pvp";
-      resetGame();
+      state.gameMode = "pvp-lobby";
+      updateHUD();
     });
 
-    // PvP rounds setting
-    dom.pvpRoundsSelect.addEventListener("change", (e) => {
+    // PvP Lobby Actions
+    dom.createRoomBtn.addEventListener("click", hostCreateRoom);
+
+    dom.joinRoomBtn.addEventListener("click", () => {
+      joinExistingRoom(dom.joinCodeInput.value.trim());
+    });
+
+    dom.joinCodeInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        joinExistingRoom(dom.joinCodeInput.value.trim());
+      }
+    });
+
+    dom.copyInviteBtn.addEventListener("click", () => {
+      const url = `${window.location.origin}${window.location.pathname}?room=${state.pvp.roomCode}`;
+      navigator.clipboard.writeText(url).then(() => {
+        alert(`Invite link copied to clipboard!\nSend this link or the 4-digit code (${state.pvp.roomCode}) to your friend!`);
+      }).catch(() => {
+        prompt("Copy invite link:", url);
+      });
+    });
+
+    dom.localDuelBtn.addEventListener("click", startLocalDuel);
+
+    // Rematch & Leave
+    dom.pvpRematchBtn.addEventListener("click", () => {
       soundManager.playClick();
-      state.pvp.totalRounds = parseInt(e.target.value, 10);
-      resetGame();
+      dom.pvpGameoverModal.classList.remove("active");
+      if (state.pvp.isOnline) {
+        mpManager.send({ type: "REMATCH" });
+        if (state.pvp.isHost) {
+          const seq = generateFlagSequence(10);
+          state.pvp.flagSequence = seq;
+          state.pvp.totalRounds = seq.length;
+          state.pvp.currentTurnIndex = 0;
+          state.pvp.activePlayer = 1;
+          state.pvp.scoreP1 = 0;
+          state.pvp.scoreP2 = 0;
+
+          mpManager.send({
+            type: "START_MATCH",
+            flagSequence: seq,
+            totalRounds: seq.length
+          });
+          startPvpMatch();
+        }
+      } else {
+        startLocalDuel();
+      }
     });
 
-    // Continent Filter
+    dom.pvpLeaveBtn.addEventListener("click", () => {
+      soundManager.playClick();
+      dom.pvpGameoverModal.classList.remove("active");
+      mpManager.close();
+      state.gameMode = "pvp-lobby";
+      updateHUD();
+    });
+
+    // Continent Filter in Solo
     dom.continentFilter.addEventListener("change", (e) => {
       soundManager.playClick();
       state.selectedContinent = e.target.value;
-      resetGame();
+      state.usedCountryCodes.clear();
+      pickNextSoloFlag();
     });
 
     // Sound toggle
@@ -609,16 +928,13 @@
     dom.soloPlayAgainBtn.addEventListener("click", () => {
       soundManager.playClick();
       dom.soloGameoverModal.classList.remove("active");
-      resetGame();
+      state.solo.score = 0;
+      state.solo.streak = 0;
+      state.solo.lives = state.solo.maxLives;
+      pickNextSoloFlag();
     });
 
-    dom.pvpRematchBtn.addEventListener("click", () => {
-      soundManager.playClick();
-      dom.pvpGameoverModal.classList.remove("active");
-      resetGame();
-    });
-
-    // Navigation Tabs: Play vs Study
+    // Tabs
     dom.playTab.addEventListener("click", () => {
       soundManager.playClick();
       dom.playTab.classList.add("active");
@@ -640,7 +956,7 @@
       dom.playTab.click();
     });
 
-    // Input submission & Autocomplete
+    // Input & Autocomplete
     dom.typeSubmitBtn.addEventListener("click", submitGuess);
     dom.typeInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -650,22 +966,19 @@
     });
     dom.typeInput.addEventListener("input", handleAutocomplete);
 
-    // Hide autocomplete on click outside
     document.addEventListener("click", (e) => {
-      if (!dom.typeSection.contains(e.target)) {
+      if (dom.autocompleteList && !dom.typeInput.contains(e.target) && !dom.autocompleteList.contains(e.target)) {
         dom.autocompleteList.style.display = "none";
       }
     });
 
-    // Search in encyclopedia
     dom.studySearchInput.addEventListener("input", (e) => {
       renderEncyclopedia(e.target.value);
     });
 
-    // Keyboard shortcuts: M for mute, Esc to close modals
+    // Keyboard Shortcuts
     window.addEventListener("keydown", (e) => {
       if (e.target.tagName === "INPUT" && e.key !== "Escape") return;
-
       if (e.key === "m" || e.key === "M") {
         dom.soundBtn.click();
       } else if (e.key === "Escape") {
@@ -676,14 +989,34 @@
     });
   }
 
-  // --- INITIALIZE ---
+  // --- INITIALIZATION ---
   function init() {
+    cacheDOMElements();
     loadStats();
     updateSoundButton();
     setupEventListeners();
-    resetGame();
     renderEncyclopedia();
+
+    // Check URL parameters for invite code (?room=1234 or ?duel=1234)
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get("room") || urlParams.get("duel");
+
+    if (roomParam && roomParam.length === 4) {
+      dom.modePvp.click();
+      dom.joinCodeInput.value = roomParam;
+      setTimeout(() => {
+        joinExistingRoom(roomParam);
+      }, 300);
+    } else {
+      // Default: start Solo game
+      pickNextSoloFlag();
+    }
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  // Robust initialization regardless of document ready state
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();

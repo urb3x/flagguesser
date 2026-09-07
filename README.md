@@ -1,6 +1,6 @@
 # 🚩 Flag Guesser
 
-An interactive, modern web-based flag guessing game with fuzzy autocorrect typing and 1v1 PvP Duel mode!
+An interactive, modern web-based flag guessing game with fuzzy autocorrect typing and 1v1 PvP Duels via 4-digit room codes!
 
 🌐 **Live Website:** [https://urb3x.github.io/flagguesser/](https://urb3x.github.io/flagguesser/)
 
@@ -8,24 +8,30 @@ An interactive, modern web-based flag guessing game with fuzzy autocorrect typin
 
 ## ✨ Features
 
+- **⚔️ 1v1 PvP Duel with 4-Digit Room Code:**
+  - **Host a Match:** Click "Create 4-Digit Room" to get a unique code (e.g. `7429`) and a 1-click shareable invite link (`?room=7429`).
+  - **Join with Code:** Your friend enters the 4-digit code and connects in real-time over serverless WebRTC.
+  - **Pass & Play (Same Device):** Also supports 2 players on a single device without internet rooms.
+  - **Live Scoreboard & Synced Turns:** Players alternate guessing the mystery flags with instant real-time score updates.
+  - **Celebration Ceremony:** Winner showdown screen with confetti and instant Rematch.
 - **⌨️ Type to Guess with Smart Fuzzy Autocorrect:**
-  - Mandatory country name typing for a genuine geography challenge.
-  - **Fuzzy Autocorrect Engine:** Automatically forgives typos and misspellings (e.g. `germny` &rarr; Germany, `swizerland` &rarr; Switzerland, `united statse` &rarr; United States, `brasil` &rarr; Brazil).
-  - **Alias Support:** Recognizes shortcuts and aliases like `USA`, `UK`, `UAE`, `Korea`, `Holland`, and `Czechia`.
-  - **Real-time Autocomplete:** Instant interactive suggestions as you type with keyboard navigation.
-- **⚔️ 1v1 PvP Duel Mode:**
-  - Battle a friend head-to-head on the same device!
-  - Alternating turns with active player indicators and scoreboards (🔵 Player 1 vs 🟠 Player 2).
-  - Customizable match length (6, 10, or 20 flags).
-  - Winner ceremony and confetti showdown!
+  - Authentic typing-first geography game.
+  - **Fuzzy Autocorrect Engine:** Automatically forgives typos and misspellings:
+    - `germny` &rarr; Germany
+    - `swizerland` &rarr; Switzerland
+    - `argntina` &rarr; Argentina
+    - `united statse` &rarr; United States
+    - `brasil` &rarr; Brazil
+    - `moroco` &rarr; Morocco
+  - **Alias Support:** Recognizes shortcuts like `USA`, `UK`, `UAE`, `Korea`, `Holland`, and `Czechia`.
+  - **Real-time Autocomplete:** Instant interactive suggestions as you type.
 - **🎮 Solo Challenge Mode:**
   - 3 lives survival mode.
   - Streak tracking with milestone celebratory fanfares.
-- **🌍 Continent Filtering:**
-  - Practice specific regions: Europe, Asia, Americas, Africa, Oceania, or All.
+  - Continent filter (Europe, Asia, Americas, Africa, Oceania, All).
 - **🔊 Synthesized Web Audio API:**
   - Built-in hardware audio effects for button clicks, correct guesses, wrong answers, streak fanfares, and game over.
-  - No external audio files or internet audio requests needed; toggle sound anytime (`M` key or header button).
+  - Mute toggle (`M` key or header button).
 - **🎉 Physics Canvas Confetti:**
   - Custom particle confetti on winning PvP duels and high score streaks.
 - **📖 Flag Encyclopedia & Study Gallery:**

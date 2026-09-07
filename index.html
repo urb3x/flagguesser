@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flag Guesser — World Geography Game & PvP Duel</title>
-  <meta name="description" content="Play the ultimate flag guessing game! Type to guess flags with smart autocorrect, challenge friends in 1v1 PvP duels, and explore the flag encyclopedia.">
+  <title>Flag Guesser — World Geography Game & 1v1 PvP Duel</title>
+  <meta name="description" content="Play the ultimate flag guessing game! Type to guess flags with smart autocorrect, challenge friends in 1v1 PvP duels via 4-digit room codes, and explore the flag encyclopedia.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚩</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,27 +39,79 @@
         <button class="mode-chip" id="mode-pvp" data-mode="pvp">⚔️ 1v1 PvP Duel</button>
       </div>
 
-      <!-- PvP Scoreboard (Visible in PvP Mode) -->
+      <!-- PvP 4-DIGIT LOBBY (Shown when switching to PvP before a match starts) -->
+      <div class="pvp-lobby-card" id="pvp-lobby" style="display: none;">
+        <h2 class="lobby-title">⚔️ 1v1 PvP Flag Duel</h2>
+        <div class="lobby-grid">
+          <!-- Host Room -->
+          <div class="lobby-box">
+            <h3>Host a Game</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">Generate a 4-digit code and invite your friend.</p>
+            <div id="host-idle-section">
+              <button class="btn-primary" id="create-room-btn">Create 4-Digit Room 🚀</button>
+            </div>
+            <div id="host-active-section" style="display: none; flex-direction: column; align-items: center; gap: 8px;">
+              <span style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Your Room Code</span>
+              <div class="code-display" id="room-code-display">
+                <span class="code-digit">-</span>
+                <span class="code-digit">-</span>
+                <span class="code-digit">-</span>
+                <span class="code-digit">-</span>
+              </div>
+              <div class="waiting-spinner">
+                <span class="pulse-dot"></span>
+                <span>Waiting for opponent...</span>
+              </div>
+              <button class="btn-secondary" id="copy-invite-btn" style="padding: 8px 16px; font-size: 0.85rem; margin-top: 6px;">
+                📋 Copy Invite Link
+              </button>
+            </div>
+          </div>
+
+          <!-- Join Room -->
+          <div class="lobby-box">
+            <h3>Join with Code</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">Enter the 4-digit room code from your opponent.</p>
+            <input 
+              type="text" 
+              id="join-code-input" 
+              class="code-input-field" 
+              placeholder="0000" 
+              maxlength="4" 
+              pattern="\d*" 
+              inputmode="numeric"
+            >
+            <button class="btn-primary" id="join-room-btn" style="width: 100%;">Join Match ➔</button>
+            <span id="join-error-msg" style="color: var(--accent-red); font-size: 0.82rem; display: none;"></span>
+          </div>
+        </div>
+
+        <div class="local-duel-opt">
+          <button class="link-btn" id="local-duel-btn">Or play Pass &amp; Play on this same device ➔</button>
+        </div>
+      </div>
+
+      <!-- PvP In-Game Scoreboard (Shown during active PvP match) -->
       <div class="pvp-scoreboard" id="pvp-scoreboard" style="display: none;">
         <div class="pvp-player-card player-1 active-turn" id="pvp-card-p1">
-          <div class="pvp-player-name">🔵 Player 1</div>
+          <div class="pvp-player-name" id="pvp-name-p1">🔵 Player 1</div>
           <div class="pvp-player-score" id="pvp-score-p1">0</div>
           <span class="pvp-turn-badge" id="pvp-badge-p1">Your Turn</span>
         </div>
 
         <div class="pvp-center-info">
           <span class="pvp-vs-text">VS</span>
-          <span class="pvp-round-indicator" id="pvp-round-text">Round 1 / 10</span>
+          <span class="pvp-round-indicator" id="pvp-round-text">Flag 1 / 10</span>
         </div>
 
         <div class="pvp-player-card player-2" id="pvp-card-p2">
-          <div class="pvp-player-name">🟠 Player 2</div>
+          <div class="pvp-player-name" id="pvp-name-p2">🟠 Player 2</div>
           <div class="pvp-player-score" id="pvp-score-p2">0</div>
           <span class="pvp-turn-badge" id="pvp-badge-p2">Waiting</span>
         </div>
       </div>
 
-      <!-- Solo HUD Bar (Visible in Solo Mode) -->
+      <!-- Solo HUD Bar (Shown during Solo mode) -->
       <div class="hud-bar" id="solo-hud">
         <div class="hud-item">
           <span class="hud-label">Score</span>
@@ -75,8 +127,8 @@
         </div>
       </div>
 
-      <!-- Filter dropdown for continent -->
-      <div class="filter-bar">
+      <!-- Filter dropdown for continent (Only in Solo) -->
+      <div class="filter-bar" id="filter-bar">
         <select id="continent-filter" class="select-control" aria-label="Select Continent">
           <option value="all">🌍 All Continents</option>
           <option value="Europe">🇪🇺 Europe</option>
@@ -85,24 +137,19 @@
           <option value="Africa">🌍 Africa</option>
           <option value="Oceania">🏝️ Oceania</option>
         </select>
-        <select id="pvp-rounds-select" class="select-control" style="display: none;" aria-label="PvP Match Length">
-          <option value="10">⚔️ Match: 10 Flags (5 each)</option>
-          <option value="20">⚔️ Match: 20 Flags (10 each)</option>
-          <option value="6">⚔️ Quick Match: 6 Flags (3 each)</option>
-        </select>
       </div>
 
-      <!-- Main Game Arena -->
+      <!-- Main Game Arena Card (Always visible during Solo and active PvP match) -->
       <main class="game-card" id="game-card">
         <!-- Turn Prompt for PvP -->
         <div class="turn-banner player-1" id="turn-banner" style="display: none;">
-          🔵 Player 1's Turn — Type the country name!
+          🔵 Your Turn — Type the country name!
         </div>
 
         <!-- Flag Stage -->
         <div class="flag-stage" id="flag-stage">
           <div class="flag-image-wrap">
-            <img id="current-flag-img" class="flag-img" alt="Country Flag" src="">
+            <img id="current-flag-img" class="flag-img" alt="Flag to guess" src="">
           </div>
         </div>
 
@@ -121,7 +168,6 @@
               autocorrect="off" 
               autocapitalize="off" 
               spellcheck="false"
-              autofocus
             >
             <button class="submit-guess-btn" id="type-submit-btn">
               <span>Guess</span> <span>➔</span>
@@ -211,23 +257,27 @@
       <div class="stats-grid">
         <div class="stat-box" style="border-color: rgba(59, 130, 246, 0.4);">
           <span class="number" id="pvp-final-p1" style="color: var(--player-1);">0</span>
-          <span class="title">🔵 Player 1 Score</span>
+          <span class="title" id="pvp-label-p1">🔵 Player 1 Score</span>
         </div>
         <div class="stat-box" style="border-color: rgba(249, 115, 22, 0.4);">
           <span class="number" id="pvp-final-p2" style="color: var(--player-2);">0</span>
-          <span class="title">🟠 Player 2 Score</span>
+          <span class="title" id="pvp-label-p2">🟠 Player 2 Score</span>
         </div>
       </div>
       <div class="modal-actions">
         <button class="btn-primary" id="pvp-rematch-btn">Play Rematch ⚔️</button>
+        <button class="btn-secondary" id="pvp-leave-btn">Leave Match</button>
       </div>
     </div>
   </div>
 
-  <!-- Scripts -->
+  <!-- External PeerJS Library for WebRTC 4-Digit Code P2P -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- Game Scripts -->
   <script src="js/countries.js"></script>
   <script src="js/sound.js"></script>
   <script src="js/confetti.js"></script>
+  <script src="js/multiplayer.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>
