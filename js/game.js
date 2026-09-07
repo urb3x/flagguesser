@@ -363,13 +363,30 @@
     const rawGuess = dom.typeInput.value.trim();
     if (!rawGuess) return;
 
+    // Check if input matches any known country (exact or autocorrect)
+    const match = findBestCountryMatch(rawGuess);
+
+    // If input doesn't match any real country
+    if (!match) {
+      soundManager.playTone(330, "sine", 0.12, 0, 0.1);
+      dom.typeInput.classList.add("invalid");
+      showFeedback(`⚠️ Invalid country! "${rawGuess}" does not exist.`, "invalid");
+
+      setTimeout(() => {
+        dom.typeInput.classList.remove("invalid");
+        dom.typeInput.disabled = false;
+        dom.typeInput.focus();
+        dom.typeInput.select();
+      }, 700);
+      return;
+    }
+
     state.isAnsweringLocked = true;
     dom.typeInput.disabled = true;
     state.stats.totalGuesses++;
 
-    const match = findBestCountryMatch(rawGuess);
     const curr = state.currentCountry;
-    const isCorrect = match && match.country.code === curr.code;
+    const isCorrect = match.country.code === curr.code;
 
     if (isCorrect) {
       soundManager.playCorrect();
@@ -379,7 +396,7 @@
       if (match.autocorrected) {
         bannerText = `✨ Autocorrected: "${rawGuess}" ➔ ${curr.name}! (+10 pts)`;
       }
-      showFeedback(bannerText, false);
+      showFeedback(bannerText, "correct");
 
       if (state.gameMode === "solo") {
         state.solo.score += 10;
@@ -487,17 +504,21 @@
     }
   }
 
-  function showFeedback(text, isError = false) {
+  function showFeedback(text, type = "correct") {
     clearTimeout(state.feedbackTimeout);
     dom.feedbackBanner.textContent = text;
-    dom.feedbackBanner.className = isError 
-      ? "autocorrect-banner wrong-banner" 
-      : "autocorrect-banner";
+    if (type === "invalid") {
+      dom.feedbackBanner.className = "autocorrect-banner invalid-banner";
+    } else if (type === "wrong" || type === true) {
+      dom.feedbackBanner.className = "autocorrect-banner wrong-banner";
+    } else {
+      dom.feedbackBanner.className = "autocorrect-banner";
+    }
     dom.feedbackBanner.style.display = "block";
 
     state.feedbackTimeout = setTimeout(() => {
       dom.feedbackBanner.style.display = "none";
-    }, 2000);
+    }, 2200);
   }
 
   // --- AUTOCOMPLETE SUGGESTIONS ---

@@ -589,6 +589,13 @@ header {
   animation: shake 0.4s ease;
 }
 
+.guess-input.invalid {
+  border-color: var(--accent-amber) !important;
+  background: rgba(245, 158, 11, 0.2) !important;
+  color: #fde68a !important;
+  animation: shake 0.4s ease;
+}
+
 .submit-guess-btn {
   background: var(--primary);
   border: none;
@@ -674,6 +681,12 @@ header {
   background: rgba(239, 68, 68, 0.15);
   border-color: var(--accent-red);
   color: #fca5a5;
+}
+
+.autocorrect-banner.invalid-banner {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: var(--accent-amber);
+  color: #fde68a;
 }
 
 /* Modals */
