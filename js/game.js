@@ -594,12 +594,19 @@
     );
   }
 
-  function joinExistingRoom(code) {
-    if (!code || code.length !== 4) {
+  let isJoining = false;
+
+  function joinExistingRoom(rawCode) {
+    if (isJoining) return;
+    const code = String(rawCode || "").replace(/\D/g, "").slice(0, 4);
+
+    if (code.length !== 4) {
       dom.joinErrorMsg.textContent = "Please enter a valid 4-digit code!";
       dom.joinErrorMsg.style.display = "block";
       return;
     }
+
+    isJoining = true;
     soundManager.playClick();
     dom.joinErrorMsg.style.display = "none";
     dom.joinRoomBtn.disabled = true;
@@ -610,6 +617,7 @@
       code,
       // onConnected
       () => {
+        isJoining = false;
         dom.joinRoomBtn.textContent = "Connected! Starting game...";
         state.pvp.isOnline = true;
         state.pvp.isHost = false;
@@ -620,13 +628,17 @@
       handleNetworkData,
       // onError
       (err) => {
+        isJoining = false;
         dom.joinErrorMsg.textContent = err || "Could not find room with this code.";
         dom.joinErrorMsg.style.display = "block";
         dom.joinRoomBtn.disabled = false;
         dom.joinRoomBtn.textContent = "Join Match ➔";
       },
       // onDisconnect
-      handleOpponentDisconnect
+      () => {
+        isJoining = false;
+        handleOpponentDisconnect();
+      }
     );
   }
 
@@ -779,13 +791,21 @@
     // PvP Lobby Actions
     dom.createRoomBtn.addEventListener("click", hostCreateRoom);
 
+    dom.joinCodeInput.addEventListener("input", () => {
+      dom.joinCodeInput.value = dom.joinCodeInput.value.replace(/\D/g, "").slice(0, 4);
+      if (dom.joinCodeInput.value.length === 4) {
+        dom.joinErrorMsg.style.display = "none";
+      }
+    });
+
     dom.joinRoomBtn.addEventListener("click", () => {
-      joinExistingRoom(dom.joinCodeInput.value.trim());
+      joinExistingRoom(dom.joinCodeInput.value);
     });
 
     dom.joinCodeInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
-        joinExistingRoom(dom.joinCodeInput.value.trim());
+        e.preventDefault();
+        joinExistingRoom(dom.joinCodeInput.value);
       }
     });
 

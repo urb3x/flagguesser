@@ -25,6 +25,12 @@ class MultiplayerManager {
     this.callbacks = { onRoomCreated: onCreated, onOpponentJoined: onJoined, onData, onError, onDisconnect };
     this.roomCode = this.generate4DigitCode();
 
+    setTimeout(() => {
+      this._initHostPeer();
+    }, 150);
+  }
+
+  _initHostPeer() {
     const peerId = `fg1v1-${this.roomCode}`;
     try {
       this.peer = new Peer(peerId, {
@@ -39,12 +45,14 @@ class MultiplayerManager {
       });
 
       this.peer.on("open", () => {
+        console.log("Host room created with ID:", peerId);
         if (this.callbacks.onRoomCreated) {
           this.callbacks.onRoomCreated(this.roomCode);
         }
       });
 
       this.peer.on("connection", (conn) => {
+        console.log("Opponent connected to host!");
         this.conn = conn;
         this.setupConnectionHandlers();
       });
@@ -52,9 +60,11 @@ class MultiplayerManager {
       this.peer.on("error", (err) => {
         console.warn("PeerJS Host Error:", err);
         if (err.type === "unavailable-id") {
-          this.createRoom(onCreated, onJoined, onData, onError, onDisconnect);
+          // Retry with fresh code on collision
+          this.roomCode = this.generate4DigitCode();
+          this._initHostPeer();
         } else if (this.callbacks.onError) {
-          this.callbacks.onError(err.message || "Connection error");
+          this.callbacks.onError("Host connection error: " + (err.message || err.type));
         }
       });
     } catch (e) {
@@ -63,11 +73,18 @@ class MultiplayerManager {
   }
 
   joinRoom(code, onConnected, onData, onError, onDisconnect) {
+    const cleanCode = String(code).replace(/\D/g, "").slice(0, 4);
     this.close();
     this.isHost = false;
-    this.roomCode = code.trim();
+    this.roomCode = cleanCode;
     this.callbacks = { onOpponentJoined: onConnected, onData, onError, onDisconnect };
 
+    setTimeout(() => {
+      this._initClientPeer(cleanCode);
+    }, 150);
+  }
+
+  _initClientPeer(cleanCode) {
     try {
       this.peer = new Peer({
         debug: 1,
@@ -80,28 +97,34 @@ class MultiplayerManager {
         }
       });
 
-      this.peer.on("open", () => {
-        const targetId = `fg1v1-${this.roomCode}`;
+      this.peer.on("open", (id) => {
+        const targetId = `fg1v1-${cleanCode}`;
+        console.log(`Client ${id} connecting to host: ${targetId}`);
         this.conn = this.peer.connect(targetId, { reliable: true });
         this.setupConnectionHandlers();
 
-        // 9-second timeout if room doesn't respond
         clearTimeout(this.connectTimeout);
         this.connectTimeout = setTimeout(() => {
           if (!this.conn || !this.conn.open) {
             if (this.callbacks.onError) {
-              this.callbacks.onError("Room not found or opponent did not respond. Check the 4-digit code.");
+              this.callbacks.onError(`Room ${cleanCode} not found! Make sure the host has the room open.`);
             }
             this.close();
           }
-        }, 9000);
+        }, 12000);
       });
 
       this.peer.on("error", (err) => {
         console.warn("PeerJS Client Error:", err);
         clearTimeout(this.connectTimeout);
-        if (this.callbacks.onError) {
-          this.callbacks.onError("Could not connect to room " + this.roomCode);
+        if (err.type === "peer-unavailable") {
+          if (this.callbacks.onError) {
+            this.callbacks.onError(`Room ${cleanCode} not found! Make sure the host has the room open.`);
+          }
+        } else if (err.type !== "disconnected") {
+          if (this.callbacks.onError) {
+            this.callbacks.onError("Connection error: " + (err.message || err.type));
+          }
         }
       });
     } catch (e) {
@@ -115,14 +138,14 @@ class MultiplayerManager {
 
     this.conn.on("open", () => {
       clearTimeout(this.connectTimeout);
-      console.log("DataChannel connected:", this.isHost ? "Host" : "Client");
+      console.log("DataChannel open on", this.isHost ? "Host" : "Client");
 
       if (this.isHost) {
         if (this.callbacks.onOpponentJoined) {
           this.callbacks.onOpponentJoined();
         }
       } else {
-        // Client notifies host it is ready
+        // Client notifies host
         this.send({ type: "CLIENT_READY" });
         if (this.callbacks.onOpponentJoined) {
           this.callbacks.onOpponentJoined();
@@ -164,7 +187,6 @@ class MultiplayerManager {
         console.warn("Send error:", e);
       }
     } else if (this.conn) {
-      // Queue until open
       this.conn.once("open", () => {
         try {
           this.conn.send(payload);
